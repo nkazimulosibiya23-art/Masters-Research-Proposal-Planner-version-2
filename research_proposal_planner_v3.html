@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Research Proposal Planner · UNISA</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #13161d;
+    --surface2: #1a1e28;
+    --border: #2a2f3d;
+    --accent: #c8a96e;
+    --accent2: #7b9cda;
+    --accent3: #6dcba8;
+    --text: #e8e6e0;
+    --text-muted: #7a8099;
+    --text-dim: #4a5068;
+    --not-started: #3a3f52;
+    --in-progress: #7b9cda;
+    --completed: #6dcba8;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; line-height: 1.6; min-height: 100vh; }
+
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .header-title { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: 0.02em; }
+  .header-sub { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+  .header-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .overall-progress-wrap { display: flex; align-items: center; gap: 12px; }
+  .overall-label { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .overall-bar-outer { width: 160px; height: 6px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
+  .overall-bar-inner { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 99px; transition: width 0.5s ease; }
+  .overall-pct { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--accent); font-weight: 500; min-width: 36px; text-align: right; }
+  .sync-status { display: flex; align-items: center; gap: 6px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-dim); }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--not-started); transition: background 0.3s; }
+  .sync-dot.syncing { background: var(--in-progress); animation: pulse 1s infinite; }
+  .sync-dot.synced { background: var(--completed); }
+  .sync-dot.error { background: #e07a5f; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .reset-btn { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-dim); border: 1px solid var(--border); background: transparent; border-radius: 6px; padding: 4px 10px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .reset-btn:hover { color: var(--text-muted); border-color: var(--text-dim); }
+
+  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface); border: 1px solid var(--completed); color: var(--completed); font-family: 'DM Mono', monospace; font-size: 11px; padding: 8px 16px; border-radius: 8px; opacity: 0; transform: translateY(8px); transition: all 0.25s ease; pointer-events: none; z-index: 999; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.error-toast { border-color: #e07a5f; color: #e07a5f; }
+
+  .loading-overlay { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 200; gap: 16px; transition: opacity 0.4s; }
+  .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+  .loading-spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-muted); }
+
+  .layout { display: flex; min-height: calc(100vh - 60px); }
+  .sidebar { width: 230px; min-width: 230px; background: var(--surface); border-right: 1px solid var(--border); padding: 20px 0; position: sticky; top: 60px; height: calc(100vh - 60px); overflow-y: auto; }
+  .sidebar-label { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; padding: 0 18px 10px; }
+  .nav-item { padding: 9px 18px; cursor: pointer; border-left: 3px solid transparent; transition: all 0.2s; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .nav-item:hover { background: var(--surface2); }
+  .nav-item.active { border-left-color: var(--accent); background: rgba(200,169,110,0.07); }
+  .nav-item-title { font-size: 11px; font-weight: 500; color: var(--text-muted); flex: 1; line-height: 1.3; }
+  .nav-item.active .nav-item-title { color: var(--accent); }
+  .nav-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .nav-group-label { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; padding: 12px 18px 4px; }
+
+  .main { flex: 1; padding: 28px 32px; overflow-y: auto; }
+
+  .section-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; overflow: hidden; transition: box-shadow 0.2s; }
+  .section-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+  .section-header { padding: 14px 20px; display: flex; align-items: center; gap: 14px; cursor: pointer; user-select: none; border-bottom: 1px solid transparent; transition: border-color 0.2s; }
+  .section-card.expanded .section-header { border-bottom-color: var(--border); }
+  .section-num { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-dim); min-width: 26px; }
+  .section-title { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 700; color: var(--text); flex: 1; }
+  .section-meta { display: flex; align-items: center; gap: 10px; }
+  .section-pct { font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500; min-width: 34px; text-align: right; }
+  .chevron { color: var(--text-dim); font-size: 11px; transition: transform 0.3s; }
+  .section-card.expanded .chevron { transform: rotate(90deg); }
+  .section-prog-bar { height: 3px; background: var(--surface2); overflow: hidden; }
+  .section-prog-fill { height: 100%; border-radius: 99px; transition: width 0.5s ease; }
+  .section-body { display: none; padding: 16px 20px 20px; }
+  .section-card.expanded .section-body { display: block; }
+
+  .subsection { margin-bottom: 14px; }
+  .subsection-title { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--accent2); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .subsection-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
+
+  .tasks-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
+  .task-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--surface2); border-radius: 7px; border: 1px solid var(--border); cursor: pointer; transition: all 0.15s; }
+  .task-row:hover { border-color: var(--accent); }
+  .task-check { width: 17px; height: 17px; border-radius: 4px; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.15s; font-size: 10px; }
+  .task-row[data-status="completed"] .task-check { background: var(--completed); border-color: var(--completed); color: #0d0f14; }
+  .task-row[data-status="in-progress"] .task-check { border-color: var(--in-progress); background: rgba(123,156,218,0.15); }
+  .task-text { flex: 1; font-size: 12px; color: var(--text); }
+  .task-row[data-status="completed"] .task-text { color: var(--text-muted); text-decoration: line-through; }
+  .task-status-btn { font-family: 'DM Mono', monospace; font-size: 10px; padding: 2px 8px; border-radius: 99px; border: 1px solid; cursor: pointer; transition: all 0.15s; white-space: nowrap; background: transparent; }
+  .status-not-started { color: var(--text-dim); border-color: var(--not-started); }
+  .status-in-progress { color: var(--in-progress); border-color: var(--in-progress); }
+  .status-completed { color: var(--completed); border-color: var(--completed); }
+
+  .tip-box { background: rgba(200,169,110,0.06); border: 1px solid rgba(200,169,110,0.2); border-radius: 7px; padding: 10px 14px; font-size: 12px; color: var(--accent); margin-top: 12px; display: flex; gap: 8px; align-items: flex-start; }
+  .tip-icon { flex-shrink: 0; }
+
+  .legend { display: flex; gap: 16px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); font-family: 'DM Mono', monospace; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .frontmatter-card { background: rgba(200,169,110,0.04); border: 1px dashed rgba(200,169,110,0.2); }
+  .frontmatter-card .section-title { color: var(--accent); font-size: 14px; }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Loading progress from Supabase...</div>
+</div>
+
+<div class="header">
+  <div>
+    <div class="header-title">Research Proposal Planner</div>
+    <div class="header-sub">Masters in Business Management · UNISA</div>
+  </div>
+  <div class="header-right">
+    <div class="sync-status">
+      <div class="sync-dot" id="syncDot"></div>
+      <span id="syncLabel">Connecting...</span>
+    </div>
+    <div class="overall-progress-wrap">
+      <span class="overall-label">Overall</span>
+      <div class="overall-bar-outer">
+        <div class="overall-bar-inner" id="overallBar" style="width:0%"></div>
+      </div>
+      <span class="overall-pct" id="overallPct">0%</span>
+    </div>
+    <button class="reset-btn" onclick="resetAll()">↺ Reset</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-label">Contents</div>
+    <div id="sidebarNav"></div>
+  </div>
+  <div class="main">
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--not-started)"></span>Not Started</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--in-progress)"></span>In Progress</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--completed)"></span>Completed</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text-dim);font-family:'DM Mono',monospace;">Live sync · Supabase</span>
+    </div>
+    <div id="sectionsContainer"></div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://msvykfbdjhizkrnromnj.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdnlrZmJkamhpemtybnJvbW5qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MDY3NDUsImV4cCI6MjA5MTM4Mjc0NX0.TF_9Rrfbt_2-WyZVcPETmYPtNHl-UXjzMDRavJNRiHk';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const sections = [
+  // ── FRONT MATTER ─────────────────────────────────────────────
+  {
+    id: 'abstract', num: 'FM·01', title: 'Abstract', isFrontMatter: true,
+    intro: '150–300 words. Concise summary of the research problem, purpose, methodology, and expected contribution.',
+    tip: 'Write this last — once all other sections are complete, the abstract becomes much easier to distil.',
+    subsections: [
+      {
+        title: 'Abstract Content',
+        desc: 'Covers: research problem, purpose, methodology, and expected contribution (150–300 words).',
+        tasks: [
+          { id: 'a1', text: 'Draft research problem sentence' },
+          { id: 'a2', text: 'Draft purpose statement sentence' },
+          { id: 'a3', text: 'Summarise methodology in 1–2 sentences' },
+          { id: 'a4', text: 'State expected contribution in 1–2 sentences' },
+          { id: 'a5', text: 'Edit to 150–300 words and verify word count' },
+        ]
+      }
+    ]
+  },
+  {
+    id: 'frontmatter', num: 'FM·02', title: 'Preliminary Lists', isFrontMatter: true,
+    intro: 'List of Abbreviations, List of Figures, and List of Tables — inserted after the abstract.',
+    tip: 'Figures and Tables lists can be auto-generated in Word. Build the abbreviations list as you write.',
+    subsections: [
+      {
+        title: 'Preliminary Lists',
+        desc: 'Standard front matter required by UNISA.',
+        tasks: [
+          { id: 'b1', text: 'Compile List of Abbreviations used throughout the document' },
+          { id: 'b2', text: 'Insert List of Figures (auto-generate in Word once figures are added)' },
+          { id: 'b3', text: 'Insert List of Tables (auto-generate in Word once tables are added)' },
+        ]
+      }
+    ]
+  },
+
+  // ── CHAPTER 1 ─────────────────────────────────────────────────
+  {
+    id: 'ch1', num: 'Ch. 1', title: 'Introduction and Background',
+    intro: 'Introduce the study, establish relevance, and identify the research gap. Provide sectoral and contextual background.',
+    tip: 'Frame the SA digital retail landscape early — reference Takealot, Shoprite, Pick n Pay, and Checkers Sixty60 as anchor examples.',
+    subsections: [
+      {
+        title: '1.1 Introduction',
+        desc: 'Introduce the study, its relevance, and the research gap it addresses.',
+        tasks: [
+          { id: 'c1', text: 'Write opening paragraph establishing global digital retail context' },
+          { id: 'c2', text: 'Identify and articulate the research gap' },
+          { id: 'c3', text: 'State the relevance of the study to SA retail' },
+          { id: 'c4', text: 'Provide an overview of the chapter structure' },
+        ]
+      },
+      {
+        title: '1.2 Background of the Study',
+        desc: 'Provide contextual and sectoral background relevant to the research.',
+        tasks: [
+          { id: 'c5', text: 'Describe the SA retail sector landscape (traditional vs digital)' },
+          { id: 'c6', text: 'Contextualise the rise of e-commerce in South Africa' },
+          { id: 'c7', text: 'Reference JSE-listed retailers as contextual anchors' },
+          { id: 'c8', text: 'Discuss COVID-19 as accelerant of digital adoption in SA retail' },
+        ]
+      }
+    ]
+  },
+
+  // ── CHAPTER 2 ─────────────────────────────────────────────────
+  {
+    id: 'ch2', num: 'Ch. 2', title: 'Research Problem and Purpose',
+    intro: 'Clearly define what is wrong or unknown, and state the purpose of the study.',
+    tip: 'The problem statement must be defensible — back it with evidence from literature. The purpose statement must begin: "The purpose of this study is to…"',
+    subsections: [
+      {
+        title: '2.1 Problem Statement',
+        desc: 'Clearly state the research problem and justify its importance with supporting evidence.',
+        tasks: [
+          { id: 'd1', text: 'Identify and articulate the core research problem' },
+          { id: 'd2', text: 'Justify why this problem warrants academic investigation' },
+          { id: 'd3', text: 'Support problem statement with 2–3 citations from literature' },
+          { id: 'd4', text: 'Narrow the problem to the SA digital retail context' },
+        ]
+      },
+      {
+        title: '2.2 Purpose Statement',
+        desc: 'State the purpose of the study. Must begin: "The purpose of this study is to…"',
+        tasks: [
+          { id: 'd5', text: 'Draft purpose statement starting with "The purpose of this study is to…"' },
+          { id: 'd6', text: 'Ensure purpose aligns directly with the problem statement' },
+          { id: 'd7', text: 'Confirm purpose is achievable within study scope' },
+        ]
+      }
+    ]
+  },
+
+  // ── CHAPTER 3 ─────────────────────────────────────────────────
+  {
+    id: 'ch3', num: 'Ch. 3', title: 'Research Objectives and Questions',
+    intro: 'List specific, measurable objectives and align research questions or hypotheses to each one.',
+    tip: 'Use SMART objectives. Each research question must map 1:1 to an objective — your examiner will check this alignment.',
+    subsections: [
+      {
+        title: 'Research Objectives',
+        desc: 'List specific and measurable objectives for the study.',
+        tasks: [
+          { id: 'e1', text: 'Draft 3–5 specific, measurable research objectives' },
+          { id: 'e2', text: 'Ensure each objective is achievable within the study scope' },
+          { id: 'e3', text: 'Verify objectives collectively address the purpose statement' },
+        ]
+      },
+      {
+        title: 'Research Questions / Hypotheses',
+        desc: 'Formulate research questions or hypotheses aligned with each objective.',
+        tasks: [
+          { id: 'e4', text: 'Draft a research question for each objective' },
+          { id: 'e5', text: 'Decide: research questions (qualitative) or hypotheses (quantitative)' },
+          { id: 'e6', text: 'Confirm each question/hypothesis links directly to an objective' },
+        ]
+      }
+    ]
+  },
+
+  // ── CHAPTER 4 ─────────────────────────────────────────────────
+  {
+    id: 'ch4', num: 'Ch. 4', title: 'Preliminary Review of Literature',
+    intro: 'Define key concepts, present the theoretical framework, and review relevant contextual studies.',
+    tip: 'Target 40–60 peer-reviewed sources. Use EBSCOhost, ScienceDirect, Emerald, JSTOR, and Sabinet. Prioritise post-2015 sources while retaining seminal works.',
+    subsections: [
+      {
+        title: '4.1 Key Concepts / Variables',
+        desc: 'Define and discuss the central concepts and variables underpinning the study.',
+        tasks: [
+          { id: 'f1', text: 'Define "digital business model" with academic citations' },
+          { id: 'f2', text: 'Define "traditional retail" and distinguish from digital' },
+          { id: 'f3', text: 'Define omnichannel retailing as a bridging concept' },
+          { id: 'f4', text: 'Define key SA-specific concepts (e-commerce adoption, digital divide)' },
+        ]
+      },
+      {
+        title: '4.2 Theoretical Framework',
+        desc: 'Discuss the theories underpinning the study and justify their applicability.',
+        tasks: [
+          { id: 'f5', text: 'Select and justify primary framework (TAM, Porter, Disruptive Innovation, etc.)' },
+          { id: 'f6', text: 'Discuss Disruptive Innovation Theory (Christensen, 1997)' },
+          { id: 'f7', text: 'Discuss Business Model Canvas (Osterwalder & Pigneur, 2010)' },
+          { id: 'f8', text: 'Discuss TAM (Davis, 1989) — consumer digital adoption' },
+          { id: 'f9', text: 'Discuss Dynamic Capabilities Framework (Teece et al., 1997)' },
+          { id: 'f10', text: 'Develop a conceptual/analytical model linking theories to study' },
+        ]
+      },
+      {
+        title: '4.3 Contextual Review',
+        desc: 'Review relevant studies within the SA and global retail research context.',
+        tasks: [
+          { id: 'f11', text: 'Review global digital retail literature (Hänninen et al. 2022, McKee et al. 2023)' },
+          { id: 'f12', text: 'Review SA-specific studies (Shenjere et al. 2023, Goga et al. 2019)' },
+          { id: 'f13', text: 'Review Johnson (2019) — e-commerce adoption in SA grocery sector' },
+          { id: 'f14', text: 'Review Masebe et al. (2020) — digital disruption in SA shopping centres' },
+          { id: 'f15', text: 'Identify and articulate gaps in existing literature' },
+        ]
+      }
+    ]
+  },
+
+  // ── CHAPTER 5 ─────────────────────────────────────────────────
+  {
+    id: 'ch5', num: 'Ch. 5', title: 'Research Methodology',
+    intro: 'Justify every methodological choice from philosophy through to data analysis. Each sub-section must be argued, not just stated.',
+    tip: 'Mixed methods with a case study design using JSE-listed retailers is strongly recommended for this topic.',
+    subsections: [
+      {
+        title: '5.1 Research Philosophy',
+        desc: 'State and justify your philosophical stance (e.g. post-positivism, interpretivism, pragmatism).',
+        tasks: [
+          { id: 'g1', text: 'Identify philosophical stance and define it clearly' },
+          { id: 'g2', text: 'Justify why this philosophy suits your research problem' },
+        ]
+      },
+      {
+        title: '5.2 Research Approach',
+        desc: 'State whether the approach is inductive, deductive, or abductive — and justify.',
+        tasks: [
+          { id: 'g3', text: 'State research approach (inductive / deductive / abductive)' },
+          { id: 'g4', text: 'Justify approach in relation to research objectives' },
+        ]
+      },
+      {
+        title: '5.3 Research Design',
+        desc: 'State qualitative, quantitative, or mixed methods — and justify.',
+        tasks: [
+          { id: 'g5', text: 'Select and justify research design (qualitative / quantitative / mixed)' },
+          { id: 'g6', text: 'Explain how the design enables you to answer your research questions' },
+        ]
+      },
+      {
+        title: '5.4 Methodological Orientation',
+        desc: 'Specify the methodological orientation: case study, survey, ethnography, etc.',
+        tasks: [
+          { id: 'g7', text: 'State methodological orientation (e.g. case study)' },
+          { id: 'g8', text: 'Justify why this orientation suits the research context' },
+        ]
+      },
+      {
+        title: '5.5 Nature of Research Design',
+        desc: 'State whether the design is exploratory, descriptive, or explanatory.',
+        tasks: [
+          { id: 'g9', text: 'State nature of design (exploratory / descriptive / explanatory)' },
+          { id: 'g10', text: 'Link the nature of design to research objectives' },
+        ]
+      },
+      {
+        title: '5.6 Research Strategy',
+        desc: 'Explain the data generation strategy used in the study.',
+        tasks: [
+          { id: 'g11', text: 'Describe the overall data generation strategy' },
+          { id: 'g12', text: 'Explain how strategy aligns with design and methodology' },
+        ]
+      },
+      {
+        title: '5.7 Time Horizon',
+        desc: 'State whether the study is cross-sectional or longitudinal.',
+        tasks: [
+          { id: 'g13', text: 'State and justify time horizon (cross-sectional or longitudinal)' },
+        ]
+      },
+      {
+        title: '5.8 Population and Sampling',
+        desc: 'Describe the target population, sampling technique, and sample size.',
+        tasks: [
+          { id: 'g14', text: 'Define target population clearly' },
+          { id: 'g15', text: 'State and justify sampling technique (purposive, random, etc.)' },
+          { id: 'g16', text: 'Justify sample size with reference to literature or guidelines' },
+        ]
+      },
+      {
+        title: '5.9 Data Collection Methods',
+        desc: 'Explain the tools and procedures used to collect data.',
+        tasks: [
+          { id: 'g17', text: 'Describe primary data collection tools (interviews / surveys / questionnaires)' },
+          { id: 'g18', text: 'Describe secondary data sources (annual reports, Stats SA, industry reports)' },
+          { id: 'g19', text: 'Outline data collection procedure and timeline' },
+        ]
+      },
+      {
+        title: '5.10 Data Analysis',
+        desc: 'Explain data analysis methods and any software used.',
+        tasks: [
+          { id: 'g20', text: 'State analysis method (thematic, content, regression, etc.)' },
+          { id: 'g21', text: 'Specify software to be used (SPSS, NVivo, Atlas.ti, Excel, etc.)' },
+          { id: 'g22', text: 'Explain how analysis maps to research questions' },
+        ]
+      }
+    ]
+  },
+
+  // ── CHAPTER 6 ─────────────────────────────────────────────────
+  {
+    id: 'ch6', num: 'Ch. 6', title: 'Validity, Reliability, and Trustworthiness',
+    intro: 'Explain the measures used to ensure rigour across your research design.',
+    tip: 'For qualitative work use: credibility, transferability, dependability, confirmability. For quantitative: internal/external validity and reliability.',
+    subsections: [
+      {
+        title: 'Research Rigour Measures',
+        desc: 'Demonstrate that your methodology produces trustworthy, credible results.',
+        tasks: [
+          { id: 'h1', text: 'Address validity (internal and external)' },
+          { id: 'h2', text: 'Address reliability / dependability of instruments and analysis' },
+          { id: 'h3', text: 'Address trustworthiness (credibility, transferability, confirmability)' },
+          { id: 'h4', text: 'Describe triangulation or member checking strategies if applicable' },
+        ]
+      }
+    ]
+  },
+
+  // ── CHAPTER 7 ─────────────────────────────────────────────────
+  {
+    id: 'ch7', num: 'Ch. 7', title: 'Limitations and Assumptions',
+    intro: 'Be transparent about the boundaries and assumptions of your study.',
+    tip: 'Limitations are not weaknesses — they show academic maturity. Acknowledge them and explain how you mitigated them where possible.',
+    subsections: [
+      {
+        title: 'Limitations and Assumptions',
+        desc: 'State the known limitations of the study and the assumptions upon which it rests.',
+        tasks: [
+          { id: 'i1', text: 'List study limitations (scope, access, data, time, geography)' },
+          { id: 'i2', text: 'Explain how each limitation was mitigated or acknowledged' },
+          { id: 'i3', text: 'State key assumptions underlying the study' },
+          { id: 'i4', text: 'Justify why assumptions are reasonable given the context' },
+        ]
+      }
+    ]
+  },
+
+  // ── CHAPTER 8 ─────────────────────────────────────────────────
+  {
+    id: 'ch8', num: 'Ch. 8', title: 'Contribution of the Study',
+    intro: 'Explain the theoretical, practical, and societal contributions the study makes.',
+    tip: 'This section sells the value of your research. Be specific — name the theories you extend, the practitioners you help, and the societal impact.',
+    subsections: [
+      {
+        title: 'Study Contributions',
+        desc: 'Articulate the value this study adds across three dimensions.',
+        tasks: [
+          { id: 'j1', text: 'Articulate theoretical contribution (extends or challenges existing theory)' },
+          { id: 'j2', text: 'Articulate practical contribution (recommendations for SA retailers)' },
+          { id: 'j3', text: 'Articulate societal contribution (impact on SA consumers, economy, policy)' },
+        ]
+      }
+    ]
+  },
+
+  // ── CHAPTER 9 ─────────────────────────────────────────────────
+  {
+    id: 'ch9', num: 'Ch. 9', title: 'Ethical Considerations',
+    intro: 'Discuss ethics approval, informed consent, confidentiality, and data management.',
+    tip: 'UNISA requires ethics clearance for research involving human participants. Apply early — clearance can take 4–8 weeks.',
+    subsections: [
+      {
+        title: 'Ethics Framework',
+        desc: 'Address all standard ethical requirements for Masters-level research.',
+        tasks: [
+          { id: 'k1', text: 'Apply for UNISA ethics clearance (if involving human participants)' },
+          { id: 'k2', text: 'Describe informed consent process for participants' },
+          { id: 'k3', text: 'Address confidentiality and anonymity of participants' },
+          { id: 'k4', text: 'Explain data storage, security, and retention policy' },
+          { id: 'k5', text: 'Address voluntary participation and right to withdraw' },
+          { id: 'k6', text: 'Declare any conflicts of interest' },
+        ]
+      }
+    ]
+  },
+
+  // ── CHAPTER 10 ────────────────────────────────────────────────
+  {
+    id: 'ch10', num: 'Ch. 10', title: 'Chapter Outline',
+    intro: 'Provide a structured outline of all chapters in the final dissertation.',
+    tip: 'This gives your supervisor a clear map of where the study is going. Keep descriptions to 2–3 sentences per chapter.',
+    subsections: [
+      {
+        title: 'Dissertation Chapter Outline',
+        desc: 'Outline each chapter of the final dissertation with a brief description.',
+        tasks: [
+          { id: 'l1', text: 'Draft 2–3 sentence description for each planned dissertation chapter' },
+          { id: 'l2', text: 'Confirm chapter sequence is logical and coherent' },
+          { id: 'l3', text: 'Verify chapter outline aligns with research objectives' },
+        ]
+      }
+    ]
+  },
+
+  // ── CHAPTER 11 ────────────────────────────────────────────────
+  {
+    id: 'ch11', num: 'Ch. 11', title: 'Timeframe and Budget',
+    intro: 'Insert a Gantt chart outlining the research timeline and an estimated budget for the study.',
+    tip: 'Build the Gantt chart in Excel or use a free tool like Notion or GanttProject. Budget items: transcription, software, printing, travel if applicable.',
+    subsections: [
+      {
+        title: 'Gantt Chart',
+        desc: 'Visual timeline of all research activities from proposal to final submission.',
+        tasks: [
+          { id: 'm1', text: 'List all major research milestones and activities' },
+          { id: 'm2', text: 'Assign realistic timeframes to each activity' },
+          { id: 'm3', text: 'Build Gantt chart (Excel, Notion, or GanttProject)' },
+          { id: 'm4', text: 'Get supervisor sign-off on proposed timeline' },
+        ]
+      },
+      {
+        title: 'Budget Estimate',
+        desc: 'Estimated costs associated with conducting the research.',
+        tasks: [
+          { id: 'm5', text: 'Estimate cost of data collection (transcription, surveys, etc.)' },
+          { id: 'm6', text: 'Estimate software costs (NVivo, SPSS, Statista subscription, etc.)' },
+          { id: 'm7', text: 'Include printing, binding, and submission costs' },
+          { id: 'm8', text: 'Finalise and insert budget table into proposal' },
+        ]
+      }
+    ]
+  },
+
+  // ── CHAPTER 12 ────────────────────────────────────────────────
+  {
+    id: 'ch12', num: 'Ch. 12', title: 'References',
+    intro: 'Full reference list using the approved referencing style (APA or Harvard as directed by UNISA/supervisor). Target 40–60 peer-reviewed sources.',
+    tip: 'Access full papers via: EBSCOhost · ScienceDirect · Emerald Insight · JSTOR · Sabinet (SA journals). Use Zotero or Mendeley to manage references.',
+    subsections: [
+      {
+        title: 'Global & International Sources',
+        desc: 'Peer-reviewed journal articles and books from international publishers.',
+        tasks: [
+          { id: 'n1', text: 'Compile international journal articles (target 20+)' },
+          { id: 'n2', text: 'Add seminal books: Christensen, Osterwalder, Porter, Davis, Kotler' },
+          { id: 'n3', text: 'Add industry reports: McKinsey, Deloitte, PwC, Statista, Euromonitor' },
+        ]
+      },
+      {
+        title: 'SA-Specific Sources',
+        desc: 'Peer-reviewed SA literature and local data sources.',
+        tasks: [
+          { id: 'n4', text: 'Compile SA journal articles (target 10+): Shenjere, Goga, Johnson, Masebe' },
+          { id: 'n5', text: 'Add Stats SA retail trade sales data' },
+          { id: 'n6', text: 'Add CCRED working papers on SA e-commerce' },
+        ]
+      },
+      {
+        title: 'Reference Formatting',
+        desc: 'Ensure all references are correctly formatted and cross-checked.',
+        tasks: [
+          { id: 'n7', text: 'Format all references in APA style consistently' },
+          { id: 'n8', text: 'Cross-check every in-text citation has a reference list entry' },
+          { id: 'n9', text: 'Verify all DOIs and URLs are live and accessible' },
+          { id: 'n10', text: 'Import all references into Zotero or Mendeley for management' },
+        ]
+      }
+    ]
+  }
+];
+
+// ── STATE ─────────────────────────────────────────────────────
+const taskStatus = {};
+sections.forEach(s => s.subsections.forEach(sub => sub.tasks.forEach(t => { taskStatus[t.id] = 'not-started'; })));
+const expandedSections = new Set(['abstract']);
+
+const statusCycle = ['not-started', 'in-progress', 'completed'];
+const statusLabel = { 'not-started': 'Not Started', 'in-progress': 'In Progress', 'completed': 'Done' };
+const statusClass = { 'not-started': 'status-not-started', 'in-progress': 'status-in-progress', 'completed': 'status-completed' };
+const checkIcon = { 'not-started': '', 'in-progress': '◐', 'completed': '✓' };
+
+// ── SYNC UI ───────────────────────────────────────────────────
+function setSyncState(state) {
+  const dot = document.getElementById('syncDot');
+  const label = document.getElementById('syncLabel');
+  dot.className = 'sync-dot ' + state;
+  const labels = { syncing: 'Saving...', synced: 'Live · Synced', error: 'Sync error', connecting: 'Connecting...' };
+  label.textContent = labels[state] || state;
+}
+
+let toastTimer;
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error-toast' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+// ── SUPABASE ──────────────────────────────────────────────────
+async function loadFromSupabase() {
+  try {
+    setSyncState('connecting');
+    const { data, error } = await sb.from('task_progress').select('task_id, status');
+    if (error) throw error;
+    if (data) data.forEach(row => { if (taskStatus.hasOwnProperty(row.task_id)) taskStatus[row.task_id] = row.status; });
+    setSyncState('synced');
+  } catch (e) {
+    console.error('Load error:', e);
+    setSyncState('error');
+    showToast('Could not load from Supabase', true);
+  } finally {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    renderAll();
+  }
+}
+
+async function saveTaskToSupabase(taskId, status) {
+  setSyncState('syncing');
+  try {
+    const { error } = await sb.from('task_progress').upsert(
+      { task_id: taskId, status, updated_at: new Date().toISOString() },
+      { onConflict: 'task_id' }
+    );
+    if (error) throw error;
+    setSyncState('synced');
+    showToast('✓ Saved');
+  } catch (e) {
+    setSyncState('error');
+    showToast('Save failed', true);
+  }
+}
+
+async function resetAll() {
+  if (!confirm('Reset all progress? This will also clear your Supabase data.')) return;
+  sections.forEach(s => s.subsections.forEach(sub => sub.tasks.forEach(t => { taskStatus[t.id] = 'not-started'; })));
+  expandedSections.clear();
+  expandedSections.add('abstract');
+  setSyncState('syncing');
+  try {
+    const allIds = sections.flatMap(s => s.subsections.flatMap(sub => sub.tasks.map(t => t.id)));
+    const rows = allIds.map(id => ({ task_id: id, status: 'not-started', updated_at: new Date().toISOString() }));
+    const { error } = await sb.from('task_progress').upsert(rows, { onConflict: 'task_id' });
+    if (error) throw error;
+    setSyncState('synced');
+    showToast('✓ Progress reset');
+  } catch (e) {
+    setSyncState('error');
+    showToast('Reset failed on server', true);
+  }
+  renderAll();
+}
+
+// ── INTERACTIONS ──────────────────────────────────────────────
+async function cycleTask(taskId) {
+  const cur = taskStatus[taskId];
+  const idx = statusCycle.indexOf(cur);
+  taskStatus[taskId] = statusCycle[(idx + 1) % statusCycle.length];
+  renderAll();
+  await saveTaskToSupabase(taskId, taskStatus[taskId]);
+}
+
+function toggleSection(id) {
+  if (expandedSections.has(id)) expandedSections.delete(id);
+  else expandedSections.add(id);
+  renderAll();
+}
+
+function scrollToSection(id) {
+  if (!expandedSections.has(id)) { expandedSections.add(id); renderAll(); }
+  setTimeout(() => {
+    const el = document.getElementById('card-' + id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 50);
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.id === id));
+}
+
+// ── RENDER ────────────────────────────────────────────────────
+function getSectionProgress(section) {
+  const allTasks = section.subsections.flatMap(s => s.tasks);
+  const done = allTasks.filter(t => taskStatus[t.id] === 'completed').length;
+  return allTasks.length ? Math.round((done / allTasks.length) * 100) : 0;
+}
+
+function getOverallProgress() {
+  const allTasks = sections.flatMap(s => s.subsections.flatMap(sub => sub.tasks));
+  const done = allTasks.filter(t => taskStatus[t.id] === 'completed').length;
+  return allTasks.length ? Math.round((done / allTasks.length) * 100) : 0;
+}
+
+function renderSidebar() {
+  const nav = document.getElementById('sidebarNav');
+  let html = '<div class="nav-group-label">Front Matter</div>';
+  sections.forEach(s => {
+    if (!s.isFrontMatter && html.indexOf('nav-group-label">Chapters') === -1) {
+      html += '<div class="nav-group-label">Chapters</div>';
+    }
+    const pct = getSectionProgress(s);
+    const dotColor = pct === 100 ? 'var(--completed)' : pct > 0 ? 'var(--in-progress)' : 'var(--not-started)';
+    html += `<div class="nav-item" data-id="${s.id}" onclick="scrollToSection('${s.id}')">
+      <span class="nav-item-title">${s.num} · ${s.title}</span>
+      <span class="nav-dot" style="background:${dotColor}"></span>
+    </div>`;
+  });
+  nav.innerHTML = html;
+}
+
+function renderSections() {
+  const container = document.getElementById('sectionsContainer');
+  container.innerHTML = sections.map(s => {
+    const pct = getSectionProgress(s);
+    const progColor = pct === 100 ? 'var(--completed)' : pct > 0 ? 'var(--in-progress)' : 'var(--not-started)';
+    const pctColor = pct === 100 ? 'var(--completed)' : pct > 0 ? 'var(--in-progress)' : 'var(--text-dim)';
+    const isExpanded = expandedSections.has(s.id) ? 'expanded' : '';
+    const fmClass = s.isFrontMatter ? ' frontmatter-card' : '';
+
+    const totalTasks = s.subsections.flatMap(sub => sub.tasks).length;
+
+    const subsHTML = s.subsections.map(sub => {
+      const tasksHTML = sub.tasks.map(t => {
+        const st = taskStatus[t.id];
+        return `<div class="task-row" data-status="${st}" onclick="cycleTask('${t.id}')">
+          <div class="task-check">${checkIcon[st]}</div>
+          <span class="task-text">${t.text}</span>
+          <button class="task-status-btn ${statusClass[st]}">${statusLabel[st]}</button>
+        </div>`;
+      }).join('');
+      return `<div class="subsection">
+        <div class="subsection-title">${sub.title}</div>
+        <div class="subsection-desc">${sub.desc}</div>
+        <div class="tasks-list">${tasksHTML}</div>
+      </div>`;
+    }).join('');
+
+    return `<div class="section-card${fmClass} ${isExpanded}" id="card-${s.id}">
+      <div class="section-header" onclick="toggleSection('${s.id}')">
+        <span class="section-num">${s.num}</span>
+        <span class="section-title">${s.title}</span>
+        <div class="section-meta">
+          <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim)">${totalTasks} tasks</span>
+          <span class="section-pct" style="color:${pctColor}">${pct}%</span>
+        </div>
+        <span class="chevron">▶</span>
+      </div>
+      <div class="section-prog-bar">
+        <div class="section-prog-fill" style="width:${pct}%;background:${progColor}"></div>
+      </div>
+      <div class="section-body">
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;font-style:italic">${s.intro}</p>
+        ${subsHTML}
+        <div class="tip-box"><span class="tip-icon">💡</span><span>${s.tip}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderOverall() {
+  const pct = getOverallProgress();
+  document.getElementById('overallBar').style.width = pct + '%';
+  document.getElementById('overallPct').textContent = pct + '%';
+}
+
+function renderAll() { renderOverall(); renderSidebar(); renderSections(); }
+
+loadFromSupabase();
+</script>
+</body>
+</html>
